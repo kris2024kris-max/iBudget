@@ -200,6 +200,190 @@
         localStorage.setItem('theme', t);
     };
     document.documentElement.dataset.theme = localStorage.getItem('theme') || 'light';
+
+    // API基础配置
+    const base = '/api';
+    const token = localStorage.getItem('jwt');
+    if (!token) { location.href = '/login.html'; }
+
+    async function fetchJSON(url, opts) {
+        const r = await fetch(url, { ...opts, headers: { ...(opts && opts.headers || {}), 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token } });
+        if (r.status === 403) {
+            alert('登录已过期,请重新登录');
+            localStorage.removeItem('jwt');
+            location.href = '/login.html';
+            throw new Error('身份验证失败');
+        }
+        if (!r.ok) throw new Error('http ' + r.status);
+        return r.status === 204 ? null : await r.json();
+    }
+
+    // 获取DOM元素
+    const txType = document.getElementById('txType');
+    const txAmount = document.getElementById('txAmount');
+    const txCategory = document.getElementById('txCategory');
+    const txDesc = document.getElementById('txDesc');
+    const txDate = document.getElementById('txDate');
+    const fStart = document.getElementById('fStart');
+    const fEnd = document.getElementById('fEnd');
+    const fCategory = document.getElementById('fCategory');
+    const fType = document.getElementById('fType');
+
+    let editingId = null;
+
+    // 保存账目
+    document.getElementById('btnSaveTx').onclick = async () => {
+        try {
+            const payload = {
+                type: txType.value,
+                amount: parseFloat(txAmount.value || '0'),
+                categoryId: txCategory.value || null,
+                description: txDesc.value || '',
+                date: txDate.value ? txDate.value : null
+            };
+
+            if (editingId) {
+                await fetchJSON(base + '/transactions/' + editingId, { method: 'PUT', body: JSON.stringify(payload) });
+                alert('✅ 账目更新成功');
+            } else {
+                await fetchJSON(base + '/transactions', { method: 'POST', body: JSON.stringify(payload) });
+                alert('✅ 账目添加成功');
+            }
+
+            // 重置表单
+            editingId = null;
+            txType.value = 'EXPENSE';
+            txAmount.value = '';
+            txCategory.value = '';
+            txDesc.value = '';
+            txDate.value = '';
+
+            // 重新加载账目列表
+            loadTransactions();
+        } catch (e) {
+            alert('❌ 保存失败: ' + e.message);
+        }
+    };
+
+    // 重置表单
+    document.getElementById('btnResetTx').onclick = () => {
+        editingId = null;
+        txType.value = 'EXPENSE';
+        txAmount.value = '';
+        txCategory.value = '';
+        txDesc.value = '';
+        txDate.value = '';
+    };
+
+    // 加载账目列表
+    async function loadTransactions() {
+        try {
+            // 构建查询参数
+            const params = new URLSearchParams();
+            if (fStart.value) params.set('startDate', fStart.value);
+            if (fEnd.value) params.set('endDate', fEnd.value);
+            if (fCategory.value) params.set('categoryId', fCategory.value);
+            if (fType.value) params.set('type', fType.value);
+
+            const url = params.toString() ? base + '/transactions?' + params.toString() : base + '/transactions';
+            const arr = await fetchJSON(url);
+
+            // 创建表格显示(如果没有表格容器,先创建一个)
+            let container = document.getElementById('txListContainer');
+            if (!container) {
+                container = document.createElement('div');
+                container.id = 'txListContainer';
+                container.className = 'surface';
+                container.style.marginBottom = '16px';
+                document.querySelector('.container').appendChild(container);
+            }
+
+            if (!arr || arr.length === 0) {
+                container.innerHTML = '<div class="section-title">📊 账目列表</div><p style="color:var(--muted);text-align:center;padding:20px">暂无账目数据</p>';
+                return;
+            }
+
+            container.innerHTML = `
+                <div class="section-title">📊 账目列表 (${arr.length}条)</div>
+                <table style="width:100%;border-collapse:collapse">
+                    <thead>
+                        <tr style="border-bottom:1px solid var(--line)">
+                            <th style="padding:12px;text-align:left;color:var(--muted);font-weight:600">类型</th>
+                            <th style="padding:12px;text-align:left;color:var(--muted);font-weight:600">金额</th>
+                            <th style="padding:12px;text-align:left;color:var(--muted);font-weight:600">分类</th>
+                            <th style="padding:12px;text-align:left;color:var(--muted);font-weight:600">描述</th>
+                            <th style="padding:12px;text-align:left;color:var(--muted);font-weight:600">日期</th>
+                            <th style="padding:12px;text-align:center;color:var(--muted);font-weight:600">操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="txTbody"></tbody>
+                </table>
+            `;
+
+            const tbody = document.getElementById('txTbody');
+            tbody.innerHTML = arr.map(tx => {
+                const typeColor = tx.type === 'EXPENSE' ? '#ef4444' : '#10b981';
+                const typeText = tx.type === 'EXPENSE' ? '支出' : '收入';
+                return `<tr style="border-bottom:1px solid var(--line)">
+                    <td style="padding:12px;color:${typeColor};font-weight:600">${typeText}</td>
+                    <td style="padding:12px;font-weight:600">¥${(tx.amount || 0).toFixed(2)}</td>
+                    <td style="padding:12px">${tx.categoryId || '-'}</td>
+                    <td style="padding:12px;color:var(--muted)">${tx.description || '-'}</td>
+                    <td style="padding:12px;font-size:13px">${tx.date ? tx.date.replace('T', ' ') : '-'}</td>
+                    <td style="padding:12px;text-align:center">
+                        <button class="btn" style="padding:6px 12px;font-size:12px" data-id="${tx.id}" data-action="edit">编辑</button>
+                        <button class="btn" style="padding:6px 12px;font-size:12px;margin-left:4px" data-id="${tx.id}" data-action="del">删除</button>
+                    </td>
+                </tr>`;
+            }).join('');
+
+            // 绑定按钮事件
+            tbody.onclick = async (e) => {
+                const btn = e.target.closest('button');
+                if (!btn) return;
+                const id = btn.getAttribute('data-id');
+                const action = btn.getAttribute('data-action');
+
+                if (action === 'edit') {
+                    const tx = arr.find(t => t.id === id);
+                    if (tx) {
+                        editingId = id;
+                        txType.value = tx.type;
+                        txAmount.value = tx.amount;
+                        txCategory.value = tx.categoryId || '';
+                        txDesc.value = tx.description || '';
+                        txDate.value = tx.date || '';
+                        window.scrollTo({ top: 0, behavior: 'smooth' });
+                    }
+                } else if (action === 'del') {
+                    if (confirm('确定要删除这条账目吗?')) {
+                        await fetch(base + '/transactions/' + id, { method: 'DELETE', headers: { 'Authorization': 'Bearer ' + token } });
+                        alert('✅ 删除成功');
+                        loadTransactions();
+                    }
+                }
+            };
+        } catch (e) {
+            console.error('加载账目失败:', e);
+            alert('加载账目失败: ' + e.message);
+        }
+    }
+
+    // 筛选按钮
+    document.getElementById('btnApplyFilters').onclick = () => {
+        loadTransactions();
+    };
+
+    document.getElementById('btnClearFilters').onclick = () => {
+        fStart.value = '';
+        fEnd.value = '';
+        fCategory.value = '';
+        fType.value = '';
+        loadTransactions();
+    };
+
+    // 页面加载时自动加载账目
+    loadTransactions();
 </script>
 </body>
 </html>
