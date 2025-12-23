@@ -22,6 +22,11 @@
         .btn{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--line);background:#fff;color:var(--text);padding:10px 14px;border-radius:12px;cursor:pointer;font-weight:600}
         [data-theme="dark"] .btn{background:var(--card)}
         .btn-primary{background:var(--accent);border-color:var(--accent);color:#fff}
+        .toggle-group{display:flex;gap:0;border-radius:12px;overflow:hidden;border:1px solid var(--line);width:fit-content}
+        .toggle-btn{flex:1;padding:10px 24px;background:var(--bg);color:var(--muted);border:none;cursor:pointer;font-weight:600;font-size:14px;transition:all 0.2s ease;border-right:1px solid var(--line)}
+        .toggle-btn:last-child{border-right:none}
+        .toggle-btn.active{background:var(--accent);color:#fff}
+        .toggle-btn:hover:not(.active){background:var(--card);color:var(--text)}
         .table{width:100%;border-collapse:separate;border-spacing:0 8px}
         .table th{font-weight:600;color:var(--muted);text-align:left;padding:8px 10px}
         .table td{background:var(--card);border:1px solid var(--line);border-left:none;border-right:none;padding:12px 10px}
@@ -52,13 +57,11 @@
         <div class="section-title">预算设置</div>
         
         <!-- 预算类型切换 -->
-        <div style="margin-bottom:16px;display:flex;gap:20px">
-            <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
-                <input type="radio" name="budgetType" value="monthly" checked> 月度预算
-            </label>
-            <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
-                <input type="radio" name="budgetType" value="period"> 周期型预算
-            </label>
+        <div style="margin-bottom:16px">
+            <div class="toggle-group">
+                <button class="toggle-btn active" data-type="monthly">月度预算</button>
+                <button class="toggle-btn" data-type="period">周期型预算</button>
+            </div>
         </div>
 
         <!-- 月度预算表单 -->
@@ -131,9 +134,15 @@
     const periodForm=document.getElementById('periodForm')
 
     // 预算类型切换
-    document.querySelectorAll('input[name="budgetType"]').forEach(radio=>{
-        radio.onchange=()=>{
-            if(radio.value==='monthly'){
+    document.querySelectorAll('.toggle-btn').forEach(btn=>{
+        btn.onclick=()=>{
+            // 更新按钮状态
+            document.querySelectorAll('.toggle-btn').forEach(b=>b.classList.remove('active'))
+            btn.classList.add('active')
+            
+            // 切换表单显示
+            const type=btn.getAttribute('data-type')
+            if(type==='monthly'){
                 monthlyForm.style.display='block'
                 periodForm.style.display='none'
             }else{
